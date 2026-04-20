@@ -1,0 +1,14 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+    tags: ["v*"]
+  pull_request:
+
+jobs:
+  ci:
+    uses: james/workflows/.forgejo/workflows/elixir-lib.yml@main
+    with:
+      hex_release_enabled: true
+    secrets: inherit
