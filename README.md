@@ -13,7 +13,7 @@ Add `davy` to your dependencies:
 
 ```elixir
 def deps do
-  [{:davy, "~> 0.1.0"}]
+  [{:davy, "~> 0.2.0"}]
 end
 ```
 

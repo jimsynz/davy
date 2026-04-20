@@ -5,6 +5,15 @@ See [Conventional Commits](Https://conventionalcommits.org) for commit guideline
 
 <!-- changelog -->
 
+## v0.2.0 (2026-04-20)
+
+
+
+
+### Features:
+
+* add `mix davy.serve` task and promote in-memory backend to public API by James Harton
+
 ## v0.1.0 (2026-04-20)
 
 
