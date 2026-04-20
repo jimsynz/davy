@@ -7,11 +7,12 @@ defmodule Davy.IntegrationTest do
   """
   use ExUnit.Case
 
+  alias Davy.Backend.InMemory
   alias Davy.LockStore
-  alias Davy.Test.{MemoryBackend, TestServer, WebdavClient}
+  alias Davy.Test.{TestServer, WebdavClient}
 
   setup do
-    MemoryBackend.start()
+    InMemory.start()
     LockStore.ETS.reset()
     {:ok, port} = TestServer.start()
     {:ok, port: port}

@@ -14,6 +14,7 @@ defmodule Davy.MixProject do
       consolidate_protocols: Mix.env() != :dev,
       deps: deps(),
       description: @moduledoc,
+      dialyzer: [plt_add_apps: [:mix]],
       docs: docs(),
       elixir: "~> 1.19",
       elixirc_paths: elixirc_paths(Mix.env()),
@@ -61,7 +62,7 @@ defmodule Davy.MixProject do
       {:saxy, "~> 1.6"},
 
       # dev/test
-      {:bandit, "~> 1.5", only: [:test]},
+      {:bandit, "~> 1.5", only: [:dev, :test]},
       {:req, "~> 0.5", only: [:dev, :test]},
       {:jason, "~> 1.0", only: [:dev, :test]},
       {:credo, "~> 1.6", only: [:dev, :test], runtime: false},

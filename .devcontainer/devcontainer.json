@@ -6,6 +6,13 @@
   "containerEnv": {
     "ERL_ZFLAGS": "+Q 65536"
   },
+  "forwardPorts": [4918],
+  "portsAttributes": {
+    "4918": {
+      "label": "Davy WebDAV",
+      "onAutoForward": "notify"
+    }
+  },
   "features": {
     "ghcr.io/devcontainers/features/github-cli": {},
     "ghcr.io/devcontainers-extra/features/apt-packages:1": {

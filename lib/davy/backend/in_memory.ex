@@ -1,11 +1,35 @@
-defmodule Davy.Test.MemoryBackend do
-  @moduledoc false
+defmodule Davy.Backend.InMemory do
+  @moduledoc """
+  An in-memory reference implementation of the `Davy.Backend` behaviour.
+
+  Stores resources in a named ETS table owned by the calling process. Useful
+  for:
+
+    * Smoke testing with `mix davy.serve` — the task defaults to this backend.
+    * Studying the `Davy.Backend` behaviour — the callbacks are small enough
+      to read end-to-end.
+    * Exercising the server in tests that don't need real storage.
+
+  Call `start/0` once (typically in test setup or when standing up a demo
+  server) before routing requests to it.
+
+  > #### Not suitable for production {: .warning}
+  >
+  > Data lives in a named ETS table owned by the calling process and is lost
+  > when that process exits. There is no persistence, no multi-node
+  > coordination, and no access control beyond a placeholder
+  > `authenticate/1` that accepts everything.
+  """
   @behaviour Davy.Backend
 
   alias Davy.{Error, Resource}
 
   @table __MODULE__
 
+  @doc """
+  (Re)initialise the ETS table and install an empty root collection.
+  """
+  @spec start() :: :ok
   def start do
     if :ets.whereis(@table) != :undefined do
       :ets.delete(@table)
@@ -13,7 +37,6 @@ defmodule Davy.Test.MemoryBackend do
 
     :ets.new(@table, [:named_table, :set, :public])
 
-    # Create root collection
     now = DateTime.utc_now() |> DateTime.truncate(:second)
 
     root = %Resource{
@@ -27,10 +50,14 @@ defmodule Davy.Test.MemoryBackend do
     :ok
   end
 
+  @doc """
+  Reset to an empty state. Equivalent to `start/0`.
+  """
+  @spec reset() :: :ok
   def reset, do: start()
 
   @impl true
-  def authenticate(_conn), do: {:ok, %{user: "test"}}
+  def authenticate(_conn), do: {:ok, %{user: "anonymous"}}
 
   @impl true
   def resolve(_auth, path) do

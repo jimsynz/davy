@@ -5,7 +5,7 @@ defmodule Davy.Test.TestServer do
 
   @spec start(keyword()) :: {:ok, port :: pos_integer()}
   def start(opts \\ []) do
-    backend = Keyword.get(opts, :backend, Davy.Test.MemoryBackend)
+    backend = Keyword.get(opts, :backend, Davy.Backend.InMemory)
 
     plug_opts = [backend: backend]
 

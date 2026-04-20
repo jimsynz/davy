@@ -1,13 +1,14 @@
 defmodule Davy.PlugTest do
   use ExUnit.Case, async: true
 
+  alias Davy.Backend.InMemory
   alias Davy.LockStore
-  alias Davy.Test.{MemoryBackend, StreamingBackend}
+  alias Davy.Test.StreamingBackend
 
   setup do
-    MemoryBackend.start()
+    InMemory.start()
     LockStore.ETS.reset()
-    opts = Davy.Plug.init(backend: MemoryBackend)
+    opts = Davy.Plug.init(backend: InMemory)
     {:ok, opts: opts}
   end
 
@@ -56,9 +57,9 @@ defmodule Davy.PlugTest do
     end
 
     test "returns 413 when body exceeds max_buffered_put_bytes", _ do
-      MemoryBackend.start()
+      InMemory.start()
       LockStore.ETS.reset()
-      opts = Davy.Plug.init(backend: MemoryBackend, max_buffered_put_bytes: 1024)
+      opts = Davy.Plug.init(backend: InMemory, max_buffered_put_bytes: 1024)
 
       body = :crypto.strong_rand_bytes(2048)
 
@@ -71,9 +72,9 @@ defmodule Davy.PlugTest do
     end
 
     test "accepts a body exactly at the cap", _ do
-      MemoryBackend.start()
+      InMemory.start()
       LockStore.ETS.reset()
-      opts = Davy.Plug.init(backend: MemoryBackend, max_buffered_put_bytes: 1024)
+      opts = Davy.Plug.init(backend: InMemory, max_buffered_put_bytes: 1024)
 
       body = :crypto.strong_rand_bytes(1024)
 
