@@ -5,6 +5,15 @@ See [Conventional Commits](Https://conventionalcommits.org) for commit guideline
 
 <!-- changelog -->
 
+## v0.3.0 (2026-04-21)
+
+
+
+
+### Features:
+
+* emit :telemetry events for requests, backend calls, and lock store calls (#1) by James Harton
+
 ## v0.2.1 (2026-04-21)
 
 
