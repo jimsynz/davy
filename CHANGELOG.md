@@ -5,6 +5,15 @@ See [Conventional Commits](Https://conventionalcommits.org) for commit guideline
 
 <!-- changelog -->
 
+## v0.2.1 (2026-04-21)
+
+
+
+
+### Bug Fixes:
+
+* ci: add `runs-on` and fully-qualified URL to reusable workflow caller by James Harton
+
 ## v0.2.0 (2026-04-20)
 
 
