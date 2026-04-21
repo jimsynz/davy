@@ -2,8 +2,7 @@ defmodule Davy.Handler.Delete do
   @moduledoc false
 
   import Plug.Conn
-  alias Davy.Handler.Helpers
-  alias Davy.XML
+  alias Davy.{Handler.Helpers, Telemetry, XML}
   alias Plug.Conn.Status
 
   @doc false
@@ -13,8 +12,16 @@ defmodule Davy.Handler.Delete do
 
     with :ok <- Helpers.check_lock(conn, path, opts.lock_store),
          :ok <- check_descendant_locks(conn, path, opts.lock_store),
-         {:ok, resource} <- opts.backend.resolve(opts.auth, path) do
-      case opts.backend.delete(opts.auth, resource) do
+         {:ok, resource} <-
+           Telemetry.span_backend(opts.backend, :resolve, %{path: path}, fn ->
+             opts.backend.resolve(opts.auth, path)
+           end) do
+      result =
+        Telemetry.span_backend(opts.backend, :delete, %{path: resource.path}, fn ->
+          opts.backend.delete(opts.auth, resource)
+        end)
+
+      case result do
         :ok ->
           send_resp(conn, 204, "")
 
@@ -37,7 +44,12 @@ defmodule Davy.Handler.Delete do
   end
 
   defp check_descendant_locks(conn, path, lock_store) do
-    case lock_store.get_descendant_locks(path) do
+    descendants =
+      Telemetry.span_lock_store(lock_store, :get_descendant_locks, %{path: path}, fn ->
+        lock_store.get_descendant_locks(path)
+      end)
+
+    case descendants do
       [] ->
         :ok
 

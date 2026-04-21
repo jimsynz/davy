@@ -1,7 +1,7 @@
 defmodule Davy.Handler.Helpers do
   @moduledoc false
 
-  alias Davy.Error
+  alias Davy.{Error, Telemetry}
 
   @doc """
   Extract the resource path from the conn as a list of decoded URI segments.
@@ -138,7 +138,10 @@ defmodule Davy.Handler.Helpers do
   """
   @spec check_lock(Plug.Conn.t(), [String.t()], module()) :: :ok | {:error, :locked}
   def check_lock(conn, path, lock_store) do
-    locks = lock_store.get_locks_covering(path)
+    locks =
+      Telemetry.span_lock_store(lock_store, :get_locks_covering, %{path: path}, fn ->
+        lock_store.get_locks_covering(path)
+      end)
 
     if locks == [] do
       :ok
@@ -147,10 +150,16 @@ defmodule Davy.Handler.Helpers do
 
       has_valid_token =
         Enum.any?(tokens, fn token ->
-          lock_store.check_token(path, token) == :ok
+          check_token(lock_store, path, token) == :ok
         end)
 
       if has_valid_token, do: :ok, else: {:error, :locked}
     end
+  end
+
+  defp check_token(lock_store, path, token) do
+    Telemetry.span_lock_store(lock_store, :check_token, %{path: path, token: token}, fn ->
+      lock_store.check_token(path, token)
+    end)
   end
 end

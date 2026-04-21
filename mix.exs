@@ -27,7 +27,7 @@ defmodule Davy.MixProject do
 
   def application do
     [
-      extra_applications: [:logger, :crypto]
+      extra_applications: [:logger, :crypto, :telemetry]
     ]
   end
 
@@ -60,6 +60,7 @@ defmodule Davy.MixProject do
     [
       {:plug, "~> 1.15"},
       {:saxy, "~> 1.6"},
+      {:telemetry, "~> 1.0"},
 
       # dev/test
       {:bandit, "~> 1.5", only: [:dev, :test]},

@@ -2,14 +2,16 @@ defmodule Davy.Handler.Get do
   @moduledoc false
 
   import Plug.Conn
-  alias Davy.Handler.Helpers
+  alias Davy.{Handler.Helpers, Telemetry}
 
   @doc false
   @spec handle(Plug.Conn.t(), map()) :: Plug.Conn.t()
   def handle(conn, opts) do
     path = Helpers.resource_path(conn)
 
-    case opts.backend.resolve(opts.auth, path) do
+    case Telemetry.span_backend(opts.backend, :resolve, %{path: path}, fn ->
+           opts.backend.resolve(opts.auth, path)
+         end) do
       {:ok, %{type: :collection}} ->
         send_resp(conn, 405, "Method Not Allowed")
 
@@ -24,7 +26,12 @@ defmodule Davy.Handler.Get do
   defp serve_content(conn, opts, resource) do
     range_opts = parse_range(conn)
 
-    case opts.backend.get_content(opts.auth, resource, range_opts) do
+    result =
+      Telemetry.span_backend(opts.backend, :get_content, %{path: resource.path}, fn ->
+        opts.backend.get_content(opts.auth, resource, range_opts)
+      end)
+
+    case result do
       {:ok, content} -> send_content(conn, resource, content, range_opts)
       {:error, error} -> Helpers.send_error(conn, error)
     end

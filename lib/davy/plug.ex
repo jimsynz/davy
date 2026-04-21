@@ -22,7 +22,7 @@ defmodule Davy.Plug do
 
   @behaviour Plug
 
-  alias Davy.Handler
+  alias Davy.{Handler, Telemetry}
 
   @default_max_buffered_put_bytes 16 * 1024 * 1024
 
@@ -42,15 +42,23 @@ defmodule Davy.Plug do
   def call(conn, opts) do
     conn = Plug.Conn.fetch_query_params(conn)
 
-    case opts.backend.authenticate(conn) do
+    case authenticate(opts.backend, conn) do
       {:ok, auth} ->
-        dispatch(conn, Map.put(opts, :auth, auth))
+        Telemetry.span_request(conn, fn ->
+          dispatch(conn, Map.put(opts, :auth, auth))
+        end)
 
       {:error, :unauthorized} ->
         conn
         |> Plug.Conn.put_resp_header("www-authenticate", "Basic realm=\"WebDAV\"")
         |> Plug.Conn.send_resp(401, "Unauthorized")
     end
+  end
+
+  defp authenticate(backend, conn) do
+    Telemetry.span_backend(backend, :authenticate, %{conn: conn}, fn ->
+      backend.authenticate(conn)
+    end)
   end
 
   defp dispatch(%Plug.Conn{method: "OPTIONS"} = conn, opts),

@@ -2,7 +2,7 @@ defmodule Davy.Handler.Put do
   @moduledoc false
 
   import Plug.Conn
-  alias Davy.Handler.Helpers
+  alias Davy.{Handler.Helpers, Telemetry}
 
   # Slice size used when streaming the request body to the backend.
   # 64 KiB matches the order of FUSE max_read; large enough to amortise
@@ -27,7 +27,14 @@ defmodule Davy.Handler.Put do
         _ -> "application/octet-stream"
       end
 
-    existing? = match?({:ok, _}, opts.backend.resolve(opts.auth, path))
+    existing? =
+      match?(
+        {:ok, _},
+        Telemetry.span_backend(opts.backend, :resolve, %{path: path}, fn ->
+          opts.backend.resolve(opts.auth, path)
+        end)
+      )
+
     backend_opts = %{content_type: content_type}
 
     {result, conn} = dispatch_put(conn, opts, path, backend_opts)
@@ -65,7 +72,11 @@ defmodule Davy.Handler.Put do
         fn _ -> :ok end
       )
 
-    result = opts.backend.put_content_stream(opts.auth, path, body_stream, backend_opts)
+    result =
+      Telemetry.span_backend(opts.backend, :put_content_stream, %{path: path}, fn ->
+        opts.backend.put_content_stream(opts.auth, path, body_stream, backend_opts)
+      end)
+
     conn = Process.get(:davy_put_conn, conn)
     Process.delete(:davy_put_conn)
     {result, conn}
@@ -99,7 +110,11 @@ defmodule Davy.Handler.Put do
 
     case read_capped_body(conn, cap) do
       {:ok, body, conn} ->
-        result = opts.backend.put_content(opts.auth, path, body, backend_opts)
+        result =
+          Telemetry.span_backend(opts.backend, :put_content, %{path: path}, fn ->
+            opts.backend.put_content(opts.auth, path, body, backend_opts)
+          end)
+
         {result, conn}
 
       {:too_large, conn} ->

@@ -2,7 +2,7 @@ defmodule Davy.Handler.Proppatch do
   @moduledoc false
 
   import Plug.Conn
-  alias Davy.{Handler.Helpers, XML}
+  alias Davy.{Handler.Helpers, Telemetry, XML}
 
   @dav_ns "DAV:"
 
@@ -12,11 +12,24 @@ defmodule Davy.Handler.Proppatch do
     path = Helpers.resource_path(conn)
 
     with :ok <- Helpers.check_lock(conn, path, opts.lock_store),
-         {:ok, resource} <- opts.backend.resolve(opts.auth, path),
+         {:ok, resource} <-
+           Telemetry.span_backend(opts.backend, :resolve, %{path: path}, fn ->
+             opts.backend.resolve(opts.auth, path)
+           end),
          # audit:bounded PROPPATCH body is a small XML property list (RFC 4918 §9.2)
          {:ok, body, _conn} <- read_body(conn),
          {:ok, operations} <- parse_proppatch_body(body) do
-      case opts.backend.set_properties(opts.auth, resource, operations) do
+      properties = Enum.map(operations, &operation_property/1)
+
+      result =
+        Telemetry.span_backend(
+          opts.backend,
+          :set_properties,
+          %{path: resource.path, properties: properties},
+          fn -> opts.backend.set_properties(opts.auth, resource, operations) end
+        )
+
+      case result do
         :ok ->
           send_proppatch_success(conn, path, operations)
 
@@ -77,6 +90,9 @@ defmodule Davy.Handler.Proppatch do
   end
 
   defp parse_update_instruction(_), do: []
+
+  defp operation_property({:set, property, _}), do: property
+  defp operation_property({:remove, property}), do: property
 
   defp extract_text(children) do
     children

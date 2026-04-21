@@ -2,7 +2,7 @@ defmodule Davy.Handler.Mkcol do
   @moduledoc false
 
   import Plug.Conn
-  alias Davy.Handler.Helpers
+  alias Davy.{Handler.Helpers, Telemetry}
 
   @doc false
   @spec handle(Plug.Conn.t(), map()) :: Plug.Conn.t()
@@ -11,7 +11,12 @@ defmodule Davy.Handler.Mkcol do
 
     with :ok <- check_no_body(conn),
          :ok <- Helpers.check_lock(conn, path, opts.lock_store) do
-      case opts.backend.create_collection(opts.auth, path) do
+      result =
+        Telemetry.span_backend(opts.backend, :create_collection, %{path: path}, fn ->
+          opts.backend.create_collection(opts.auth, path)
+        end)
+
+      case result do
         :ok -> send_resp(conn, 201, "")
         {:error, error} -> Helpers.send_error(conn, error)
       end

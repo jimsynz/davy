@@ -2,7 +2,7 @@ defmodule Davy.Handler.CopyMove do
   @moduledoc false
 
   import Plug.Conn
-  alias Davy.Handler.Helpers
+  alias Davy.{Handler.Helpers, Telemetry}
 
   @doc false
   @spec handle(Plug.Conn.t(), map()) :: Plug.Conn.t()
@@ -13,22 +13,7 @@ defmodule Davy.Handler.CopyMove do
          :ok <- check_not_self(path, dest_path),
          :ok <- check_not_descendant(conn.method, path, dest_path),
          :ok <- maybe_check_lock(conn, path, dest_path, opts) do
-      overwrite? = Helpers.parse_overwrite(conn)
-
-      {:ok, resource} = opts.backend.resolve(opts.auth, path)
-
-      result =
-        if conn.method == "COPY" do
-          opts.backend.copy(opts.auth, resource, dest_path, overwrite?)
-        else
-          opts.backend.move(opts.auth, resource, dest_path, overwrite?)
-        end
-
-      case result do
-        {:ok, :created} -> send_resp(conn, 201, "")
-        {:ok, :no_content} -> send_resp(conn, 204, "")
-        {:error, error} -> Helpers.send_error(conn, error)
-      end
+      do_copy_or_move(conn, opts, path, dest_path)
     else
       {:error, :bad_request} ->
         send_resp(conn, 400, "Missing Destination header")
@@ -40,6 +25,35 @@ defmodule Davy.Handler.CopyMove do
         send_resp(conn, 423, "Locked")
     end
   end
+
+  defp do_copy_or_move(conn, opts, path, dest_path) do
+    overwrite? = Helpers.parse_overwrite(conn)
+    operation = if conn.method == "COPY", do: :copy, else: :move
+
+    {:ok, resource} =
+      Telemetry.span_backend(opts.backend, :resolve, %{path: path}, fn ->
+        opts.backend.resolve(opts.auth, path)
+      end)
+
+    metadata = %{source_path: resource.path, dest_path: dest_path, overwrite: overwrite?}
+
+    result =
+      Telemetry.span_backend(opts.backend, operation, metadata, fn ->
+        run_copy_or_move(operation, opts, resource, dest_path, overwrite?)
+      end)
+
+    case result do
+      {:ok, :created} -> send_resp(conn, 201, "")
+      {:ok, :no_content} -> send_resp(conn, 204, "")
+      {:error, error} -> Helpers.send_error(conn, error)
+    end
+  end
+
+  defp run_copy_or_move(:copy, opts, resource, dest_path, overwrite?),
+    do: opts.backend.copy(opts.auth, resource, dest_path, overwrite?)
+
+  defp run_copy_or_move(:move, opts, resource, dest_path, overwrite?),
+    do: opts.backend.move(opts.auth, resource, dest_path, overwrite?)
 
   defp check_not_self(path, path), do: {:error, :forbidden}
   defp check_not_self(_, _), do: :ok

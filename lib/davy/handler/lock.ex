@@ -2,7 +2,7 @@ defmodule Davy.Handler.Lock do
   @moduledoc false
 
   import Plug.Conn
-  alias Davy.{Handler.Helpers, XML}
+  alias Davy.{Handler.Helpers, Telemetry, XML}
 
   @dav_ns "DAV:"
 
@@ -37,7 +37,20 @@ defmodule Davy.Handler.Lock do
   end
 
   defp acquire_lock(conn, opts, path, scope, depth, owner, timeout) do
-    case opts.lock_store.lock(path, scope, :write, depth, owner, timeout) do
+    lock_metadata = %{
+      path: path,
+      scope: scope,
+      depth: depth,
+      owner: owner,
+      timeout: timeout
+    }
+
+    result =
+      Telemetry.span_lock_store(opts.lock_store, :lock, lock_metadata, fn ->
+        opts.lock_store.lock(path, scope, :write, depth, owner, timeout)
+      end)
+
+    case result do
       {:ok, token} ->
         send_lock_response(conn, opts, path, scope, depth, owner, token, timeout)
 
@@ -58,8 +71,13 @@ defmodule Davy.Handler.Lock do
       expires_at: System.system_time(:second) + timeout
     }
 
+    resolved =
+      Telemetry.span_backend(opts.backend, :resolve, %{path: path}, fn ->
+        opts.backend.resolve(opts.auth, path)
+      end)
+
     status =
-      case opts.backend.resolve(opts.auth, path) do
+      case resolved do
         {:ok, _} -> 200
         {:error, _} -> maybe_create_empty(opts, path)
       end
@@ -73,7 +91,15 @@ defmodule Davy.Handler.Lock do
   end
 
   defp refresh_lock(conn, opts, token, timeout) do
-    case opts.lock_store.refresh(token, timeout) do
+    result =
+      Telemetry.span_lock_store(
+        opts.lock_store,
+        :refresh,
+        %{token: token, timeout: timeout},
+        fn -> opts.lock_store.refresh(token, timeout) end
+      )
+
+    case result do
       {:ok, lock_info} ->
         body = XML.lock_response(lock_info)
 
@@ -92,7 +118,12 @@ defmodule Davy.Handler.Lock do
         send_resp(conn, 400, "Missing Lock-Token header")
 
       token ->
-        case opts.lock_store.unlock(token) do
+        result =
+          Telemetry.span_lock_store(opts.lock_store, :unlock, %{token: token}, fn ->
+            opts.lock_store.unlock(token)
+          end)
+
+        case result do
           :ok -> send_resp(conn, 204, "")
           {:error, :not_found} -> send_resp(conn, 409, "Conflict")
         end
@@ -174,9 +205,14 @@ defmodule Davy.Handler.Lock do
   end
 
   defp maybe_create_empty(opts, path) do
-    case opts.backend.put_content(opts.auth, path, "", %{
-           content_type: "application/octet-stream"
-         }) do
+    result =
+      Telemetry.span_backend(opts.backend, :put_content, %{path: path}, fn ->
+        opts.backend.put_content(opts.auth, path, "", %{
+          content_type: "application/octet-stream"
+        })
+      end)
+
+    case result do
       {:ok, _} -> 201
       {:error, _} -> 200
     end

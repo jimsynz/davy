@@ -2,7 +2,7 @@ defmodule Davy.Handler.Propfind do
   @moduledoc false
 
   import Plug.Conn
-  alias Davy.{Handler.Helpers, Resource, XML}
+  alias Davy.{Handler.Helpers, Resource, Telemetry, XML}
 
   @dav_ns "DAV:"
 
@@ -29,7 +29,12 @@ defmodule Davy.Handler.Propfind do
       |> put_resp_header("dav", "1, 2")
       |> send_resp(403, "Depth: infinity not allowed")
     else
-      case opts.backend.resolve(opts.auth, path) do
+      resolved =
+        Telemetry.span_backend(opts.backend, :resolve, %{path: path}, fn ->
+          opts.backend.resolve(opts.auth, path)
+        end)
+
+      case resolved do
         {:ok, resource} ->
           request_type = parse_propfind_body(conn)
           resources = collect_resources(resource, depth, opts)
@@ -74,7 +79,12 @@ defmodule Davy.Handler.Propfind do
   defp collect_resources(resource, 0, _opts), do: [resource]
 
   defp collect_resources(%Resource{type: :collection} = resource, depth, opts) when depth > 0 do
-    case opts.backend.get_members(opts.auth, resource) do
+    result =
+      Telemetry.span_backend(opts.backend, :get_members, %{path: resource.path}, fn ->
+        opts.backend.get_members(opts.auth, resource)
+      end)
+
+    case result do
       {:ok, members} ->
         if depth == 1 do
           [resource | members]
@@ -100,7 +110,11 @@ defmodule Davy.Handler.Propfind do
 
   defp build_response(conn, opts, resource, :allprop) do
     href = Helpers.href(conn, resource.path)
-    locks = opts.lock_store.get_locks(resource.path)
+
+    locks =
+      Telemetry.span_lock_store(opts.lock_store, :get_locks, %{path: resource.path}, fn ->
+        opts.lock_store.get_locks(resource.path)
+      end)
 
     found_props =
       @all_dav_properties
@@ -123,7 +137,11 @@ defmodule Davy.Handler.Propfind do
 
   defp build_response(conn, opts, resource, {:prop, requested_props}) do
     href = Helpers.href(conn, resource.path)
-    locks = opts.lock_store.get_locks(resource.path)
+
+    locks =
+      Telemetry.span_lock_store(opts.lock_store, :get_locks, %{path: resource.path}, fn ->
+        opts.lock_store.get_locks(resource.path)
+      end)
 
     {dav_props, custom_props} =
       Enum.split_with(requested_props, fn {ns, _} -> ns == @dav_ns end)
@@ -141,7 +159,13 @@ defmodule Davy.Handler.Propfind do
 
     {found, not_found} =
       if custom_props != [] do
-        results = opts.backend.get_properties(opts.auth, resource, custom_props)
+        results =
+          Telemetry.span_backend(
+            opts.backend,
+            :get_properties,
+            %{path: resource.path, properties: custom_props},
+            fn -> opts.backend.get_properties(opts.auth, resource, custom_props) end
+          )
 
         Enum.reduce(results, {found, not_found}, fn
           {{ns, name}, {:ok, value}}, {f, nf} ->

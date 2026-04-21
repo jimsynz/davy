@@ -50,6 +50,21 @@ forward "/dav", Davy.Plug, backend: MyApp.DavBackend
 | LOCK | Acquire write locks |
 | UNLOCK | Release write locks |
 
+## Telemetry
+
+Davy emits [`:telemetry`](https://hexdocs.pm/telemetry) spans for every
+request, every backend callback, and every lock store call. Attach handlers
+to measure latency, count error codes, or integrate with
+`telemetry_metrics`.
+
+Event namespaces:
+
+- `[:davy, :request, :start | :stop | :exception]`
+- `[:davy, :backend, <callback>, :start | :stop | :exception]`
+- `[:davy, :lock_store, <callback>, :start | :stop | :exception]`
+
+See `Davy.Telemetry` for the full event catalogue, measurements and metadata.
+
 ## References
 
 - [RFC 4918 — WebDAV](https://www.rfc-editor.org/rfc/rfc4918)
