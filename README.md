@@ -69,6 +69,10 @@ See `Davy.Telemetry` for the full event catalogue, measurements and metadata.
 
 - [RFC 4918 — WebDAV](https://www.rfc-editor.org/rfc/rfc4918)
 
+## GitHub Mirror
+
+Eventually, [Forgejo](https://www.forgejo.org) will support fully federated operation, but for now there's a [mirror of this repository on GitHub](https://www.github.com/jimsynz/davy) - feel free to open issues and PRs there.
+
 ## Licence
 
 [Apache-2.0](LICENSE)
