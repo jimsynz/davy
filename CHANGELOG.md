@@ -5,6 +5,15 @@ See [Conventional Commits](Https://conventionalcommits.org) for commit guideline
 
 <!-- changelog -->
 
+## v0.3.1 (2026-05-09)
+
+
+
+
+### Bug Fixes:
+
+* avoid compile warning when bandit is not available by James Harton
+
 ## v0.3.0 (2026-04-21)
 
 
