@@ -64,7 +64,7 @@ defmodule Davy.MixProject do
 
       # dev/test
       {:bandit, "~> 1.5", only: [:dev, :test]},
-      {:req, "~> 0.5", only: [:dev, :test]},
+      {:req, "~> 0.6", only: [:dev, :test]},
       {:jason, "~> 1.0", only: [:dev, :test]},
       {:credo, "~> 1.6", only: [:dev, :test], runtime: false},
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},
