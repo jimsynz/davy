@@ -5,6 +5,17 @@ See [Conventional Commits](Https://conventionalcommits.org) for commit guideline
 
 <!-- changelog -->
 
+## v0.4.0 (2026-08-12)
+### Breaking Changes:
+
+* allow lock stores to report service unavailability (#34) by James Harton
+
+
+
+### Bug Fixes:
+
+* support all RFC 9110 byte range forms and return 416 (#36) by James Harton
+
 ## v0.3.1 (2026-05-09)
 
 

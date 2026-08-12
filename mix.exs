@@ -4,7 +4,7 @@ defmodule Davy.MixProject do
   @moduledoc """
   A Plug-based WebDAV server library for Elixir.
   """
-  @version "0.3.1"
+  @version "0.4.0"
   @source_url "https://harton.dev/james/davy"
 
   def project do
