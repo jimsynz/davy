@@ -135,26 +135,47 @@ defmodule Davy.Handler.Helpers do
   Returns `:ok` if neither the path nor any ancestor collection with
   `depth: :infinity` is locked, or if a valid token covering the write
   is provided in the `If` header.
+
+  A lock store that cannot answer returns its own error, which propagates
+  unchanged — an unreachable store never reads as "unlocked".
   """
-  @spec check_lock(Plug.Conn.t(), [String.t()], module()) :: :ok | {:error, :locked}
+  @spec check_lock(Plug.Conn.t(), [String.t()], module()) :: :ok | {:error, Error.t()}
   def check_lock(conn, path, lock_store) do
-    locks =
-      Telemetry.span_lock_store(lock_store, :get_locks_covering, %{path: path}, fn ->
-        lock_store.get_locks_covering(path)
-      end)
+    case locks_covering(lock_store, path) do
+      {:ok, []} ->
+        :ok
 
-    if locks == [] do
-      :ok
-    else
-      tokens = extract_lock_tokens(conn)
+      {:ok, _locks} ->
+        conn
+        |> extract_lock_tokens()
+        |> find_covering_token(lock_store, path)
 
-      has_valid_token =
-        Enum.any?(tokens, fn token ->
-          check_token(lock_store, path, token) == :ok
-        end)
-
-      if has_valid_token, do: :ok, else: {:error, :locked}
+      {:error, %Error{} = error} ->
+        {:error, error}
     end
+  end
+
+  @doc """
+  Build the error returned when a write is blocked by a lock the request
+  did not supply a token for.
+  """
+  @spec locked_error() :: Error.t()
+  def locked_error, do: %Error{code: :locked, message: "Locked"}
+
+  defp locks_covering(lock_store, path) do
+    Telemetry.span_lock_store(lock_store, :get_locks_covering, %{path: path}, fn ->
+      lock_store.get_locks_covering(path)
+    end)
+  end
+
+  defp find_covering_token(tokens, lock_store, path) do
+    Enum.reduce_while(tokens, {:error, locked_error()}, fn token, blocked ->
+      case check_token(lock_store, path, token) do
+        :ok -> {:halt, :ok}
+        {:error, :invalid_token} -> {:cont, blocked}
+        {:error, %Error{} = error} -> {:halt, {:error, error}}
+      end
+    end)
   end
 
   defp check_token(lock_store, path, token) do

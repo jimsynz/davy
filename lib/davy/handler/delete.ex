@@ -32,9 +32,6 @@ defmodule Davy.Handler.Delete do
           Helpers.send_error(conn, error)
       end
     else
-      {:error, :locked} ->
-        send_resp(conn, 423, "Locked")
-
       {:locked_descendants, locked_paths} ->
         send_multistatus_locked_descendants(conn, locked_paths)
 
@@ -50,10 +47,10 @@ defmodule Davy.Handler.Delete do
       end)
 
     case descendants do
-      [] ->
+      {:ok, []} ->
         :ok
 
-      descendant_locks ->
+      {:ok, descendant_locks} ->
         tokens = Helpers.extract_lock_tokens(conn)
 
         locked =
@@ -66,6 +63,9 @@ defmodule Davy.Handler.Delete do
           [] -> :ok
           paths -> {:locked_descendants, paths}
         end
+
+      {:error, error} ->
+        {:error, error}
     end
   end
 

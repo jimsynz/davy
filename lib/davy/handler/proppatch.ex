@@ -37,13 +37,10 @@ defmodule Davy.Handler.Proppatch do
           Helpers.send_error(conn, error)
       end
     else
-      {:error, :locked} ->
-        send_resp(conn, 423, "Locked")
-
       {:error, :bad_request} ->
         send_resp(conn, 400, "Invalid PROPPATCH body")
 
-      {:error, error} when is_struct(error, Davy.Error) ->
+      {:error, error} ->
         Helpers.send_error(conn, error)
     end
   end

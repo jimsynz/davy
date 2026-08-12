@@ -21,8 +21,8 @@ defmodule Davy.Handler.CopyMove do
       {:error, :forbidden} ->
         send_resp(conn, 403, "Cannot copy/move to descendant of self")
 
-      {:error, :locked} ->
-        send_resp(conn, 423, "Locked")
+      {:error, error} ->
+        Helpers.send_error(conn, error)
     end
   end
 

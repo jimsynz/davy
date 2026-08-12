@@ -2,7 +2,7 @@ defmodule Davy.Handler.Lock do
   @moduledoc false
 
   import Plug.Conn
-  alias Davy.{Handler.Helpers, Telemetry, XML}
+  alias Davy.{Error, Handler.Helpers, Telemetry, XML}
 
   @dav_ns "DAV:"
 
@@ -55,7 +55,10 @@ defmodule Davy.Handler.Lock do
         send_lock_response(conn, opts, path, scope, depth, owner, token, timeout)
 
       {:error, :conflict} ->
-        send_resp(conn, 423, "Locked")
+        Helpers.send_error(conn, Helpers.locked_error())
+
+      {:error, %Error{} = error} ->
+        Helpers.send_error(conn, error)
     end
   end
 
@@ -109,6 +112,9 @@ defmodule Davy.Handler.Lock do
 
       {:error, :not_found} ->
         send_resp(conn, 412, "Precondition Failed")
+
+      {:error, %Error{} = error} ->
+        Helpers.send_error(conn, error)
     end
   end
 
@@ -126,6 +132,7 @@ defmodule Davy.Handler.Lock do
         case result do
           :ok -> send_resp(conn, 204, "")
           {:error, :not_found} -> send_resp(conn, 409, "Conflict")
+          {:error, %Error{} = error} -> Helpers.send_error(conn, error)
         end
     end
   end

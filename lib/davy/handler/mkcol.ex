@@ -24,8 +24,8 @@ defmodule Davy.Handler.Mkcol do
       {:error, :unsupported_media_type} ->
         send_resp(conn, 415, "Unsupported Media Type")
 
-      {:error, :locked} ->
-        send_resp(conn, 423, "Locked")
+      {:error, error} ->
+        Helpers.send_error(conn, error)
     end
   end
 

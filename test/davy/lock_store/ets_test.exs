@@ -33,7 +33,8 @@ defmodule Davy.LockStore.ETSTest do
     test "multiple shared locks are allowed" do
       {:ok, _} = ETS.lock(["file.txt"], :shared, :write, 0, "user1", 1800)
       {:ok, _} = ETS.lock(["file.txt"], :shared, :write, 0, "user2", 1800)
-      assert length(ETS.get_locks(["file.txt"])) == 2
+      assert {:ok, locks} = ETS.get_locks(["file.txt"])
+      assert length(locks) == 2
     end
 
     test "locks on different paths do not conflict" do
@@ -43,7 +44,7 @@ defmodule Davy.LockStore.ETSTest do
 
     test "stores depth in lock info" do
       {:ok, token} = ETS.lock(["dir"], :exclusive, :write, :infinity, nil, 1800)
-      [info] = ETS.get_locks(["dir"])
+      {:ok, [info]} = ETS.get_locks(["dir"])
       assert info.depth == :infinity
       assert info.token == token
     end
@@ -85,7 +86,7 @@ defmodule Davy.LockStore.ETSTest do
     test "removes a lock" do
       {:ok, token} = ETS.lock(["file.txt"], :exclusive, :write, 0, nil, 1800)
       assert :ok = ETS.unlock(token)
-      assert ETS.get_locks(["file.txt"]) == []
+      assert {:ok, []} = ETS.get_locks(["file.txt"])
     end
 
     test "returns error for unknown token" do
@@ -108,48 +109,48 @@ defmodule Davy.LockStore.ETSTest do
   describe "get_locks/1" do
     test "returns active locks for a path" do
       {:ok, _} = ETS.lock(["file.txt"], :exclusive, :write, 0, "owner", 1800)
-      locks = ETS.get_locks(["file.txt"])
+      {:ok, locks} = ETS.get_locks(["file.txt"])
       assert length(locks) == 1
       assert hd(locks).owner == "owner"
     end
 
     test "returns empty list for unlocked path" do
-      assert ETS.get_locks(["file.txt"]) == []
+      assert {:ok, []} = ETS.get_locks(["file.txt"])
     end
 
     test "does not return ancestor depth:infinity locks" do
       {:ok, _} = ETS.lock(["dir"], :exclusive, :write, :infinity, nil, 1800)
-      assert ETS.get_locks(["dir", "file.txt"]) == []
+      assert {:ok, []} = ETS.get_locks(["dir", "file.txt"])
     end
   end
 
   describe "get_locks_covering/1" do
     test "returns direct locks on the path" do
       {:ok, token} = ETS.lock(["file.txt"], :exclusive, :write, 0, nil, 1800)
-      [info] = ETS.get_locks_covering(["file.txt"])
+      {:ok, [info]} = ETS.get_locks_covering(["file.txt"])
       assert info.token == token
     end
 
     test "returns ancestor depth:infinity locks" do
       {:ok, token} = ETS.lock(["dir"], :exclusive, :write, :infinity, nil, 1800)
-      [info] = ETS.get_locks_covering(["dir", "nested", "file.txt"])
+      {:ok, [info]} = ETS.get_locks_covering(["dir", "nested", "file.txt"])
       assert info.token == token
     end
 
     test "excludes ancestor depth:0 locks" do
       {:ok, _} = ETS.lock(["dir"], :exclusive, :write, 0, nil, 1800)
-      assert ETS.get_locks_covering(["dir", "file.txt"]) == []
+      assert {:ok, []} = ETS.get_locks_covering(["dir", "file.txt"])
     end
 
     test "excludes sibling locks" do
       {:ok, _} = ETS.lock(["dir", "other.txt"], :exclusive, :write, 0, nil, 1800)
-      assert ETS.get_locks_covering(["dir", "file.txt"]) == []
+      assert {:ok, []} = ETS.get_locks_covering(["dir", "file.txt"])
     end
 
     test "combines direct and ancestor locks" do
       {:ok, _} = ETS.lock(["dir"], :shared, :write, :infinity, "user-a", 1800)
       {:ok, _} = ETS.lock(["dir", "file.txt"], :shared, :write, 0, "user-b", 1800)
-      locks = ETS.get_locks_covering(["dir", "file.txt"])
+      {:ok, locks} = ETS.get_locks_covering(["dir", "file.txt"])
       assert length(locks) == 2
     end
   end
@@ -159,27 +160,28 @@ defmodule Davy.LockStore.ETSTest do
       {:ok, a_token} = ETS.lock(["dir", "a.txt"], :exclusive, :write, 0, nil, 1800)
       {:ok, b_token} = ETS.lock(["dir", "sub", "b.txt"], :exclusive, :write, 0, nil, 1800)
 
-      tokens = ETS.get_descendant_locks(["dir"]) |> Enum.map(& &1.token) |> Enum.sort()
+      {:ok, descendants} = ETS.get_descendant_locks(["dir"])
+      tokens = descendants |> Enum.map(& &1.token) |> Enum.sort()
       assert tokens == Enum.sort([a_token, b_token])
     end
 
     test "excludes the target path itself" do
       {:ok, _} = ETS.lock(["dir"], :exclusive, :write, 0, nil, 1800)
-      assert ETS.get_descendant_locks(["dir"]) == []
+      assert {:ok, []} = ETS.get_descendant_locks(["dir"])
     end
 
     test "excludes sibling paths" do
       {:ok, _} = ETS.lock(["other", "file.txt"], :exclusive, :write, 0, nil, 1800)
-      assert ETS.get_descendant_locks(["dir"]) == []
+      assert {:ok, []} = ETS.get_descendant_locks(["dir"])
     end
 
     test "excludes ancestor locks" do
       {:ok, _} = ETS.lock(["dir"], :exclusive, :write, :infinity, nil, 1800)
-      assert ETS.get_descendant_locks(["dir", "sub"]) == []
+      assert {:ok, []} = ETS.get_descendant_locks(["dir", "sub"])
     end
 
     test "returns empty for unlocked collection" do
-      assert ETS.get_descendant_locks(["nothing"]) == []
+      assert {:ok, []} = ETS.get_descendant_locks(["nothing"])
     end
   end
 

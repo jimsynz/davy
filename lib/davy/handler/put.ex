@@ -16,7 +16,7 @@ defmodule Davy.Handler.Put do
 
     case Helpers.check_lock(conn, path, opts.lock_store) do
       :ok -> do_put(conn, opts, path)
-      {:error, :locked} -> send_resp(conn, 423, "Locked")
+      {:error, error} -> Helpers.send_error(conn, error)
     end
   end
 

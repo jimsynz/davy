@@ -98,7 +98,7 @@ defmodule Davy.LockStore.ETS do
   def get_locks(path) do
     init()
     now = System.system_time(:second)
-    get_active_locks(path, now)
+    {:ok, get_active_locks(path, now)}
   end
 
   @impl true
@@ -106,11 +106,14 @@ defmodule Davy.LockStore.ETS do
     init()
     now = System.system_time(:second)
 
-    :ets.tab2list(@table)
-    |> Enum.filter(fn {_token, info} ->
-      info.expires_at > now and covers?(info, path)
-    end)
-    |> Enum.map(fn {_token, info} -> info end)
+    locks =
+      :ets.tab2list(@table)
+      |> Enum.filter(fn {_token, info} ->
+        info.expires_at > now and covers?(info, path)
+      end)
+      |> Enum.map(fn {_token, info} -> info end)
+
+    {:ok, locks}
   end
 
   @impl true
@@ -118,11 +121,14 @@ defmodule Davy.LockStore.ETS do
     init()
     now = System.system_time(:second)
 
-    :ets.tab2list(@table)
-    |> Enum.filter(fn {_token, info} ->
-      info.expires_at > now and descendant?(info.path, path)
-    end)
-    |> Enum.map(fn {_token, info} -> info end)
+    locks =
+      :ets.tab2list(@table)
+      |> Enum.filter(fn {_token, info} ->
+        info.expires_at > now and descendant?(info.path, path)
+      end)
+      |> Enum.map(fn {_token, info} -> info end)
+
+    {:ok, locks}
   end
 
   @impl true

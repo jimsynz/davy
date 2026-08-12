@@ -2,7 +2,7 @@ defmodule Davy.Handler.Propfind do
   @moduledoc false
 
   import Plug.Conn
-  alias Davy.{Handler.Helpers, Resource, Telemetry, XML}
+  alias Davy.{Error, Handler.Helpers, Resource, Telemetry, XML}
 
   @dav_ns "DAV:"
 
@@ -111,18 +111,21 @@ defmodule Davy.Handler.Propfind do
   defp build_response(conn, opts, resource, :allprop) do
     href = Helpers.href(conn, resource.path)
 
-    locks =
-      Telemetry.span_lock_store(opts.lock_store, :get_locks, %{path: resource.path}, fn ->
-        opts.lock_store.get_locks(resource.path)
-      end)
+    {resolvable, locks, lock_failure} =
+      resolve_lock_properties(opts, resource.path, @all_dav_properties)
 
     found_props =
-      @all_dav_properties
+      resolvable
       |> Enum.map(fn name -> {name, get_standard_property(resource, name, locks)} end)
       |> Enum.filter(fn {_, val} -> val != nil end)
       |> Enum.map(fn {name, val} -> {"D:#{name}", val} end)
 
-    XML.response_element(href, [{200, found_props}])
+    propstats =
+      []
+      |> maybe_add_propstat(200, found_props)
+      |> add_lock_failure_propstat(lock_failure)
+
+    XML.response_element(href, propstats)
   end
 
   defp build_response(conn, _opts, resource, :propname) do
@@ -138,19 +141,17 @@ defmodule Davy.Handler.Propfind do
   defp build_response(conn, opts, resource, {:prop, requested_props}) do
     href = Helpers.href(conn, resource.path)
 
-    locks =
-      Telemetry.span_lock_store(opts.lock_store, :get_locks, %{path: resource.path}, fn ->
-        opts.lock_store.get_locks(resource.path)
-      end)
-
     {dav_props, custom_props} =
       Enum.split_with(requested_props, fn {ns, _} -> ns == @dav_ns end)
+
+    {resolvable, locks, lock_failure} =
+      resolve_lock_properties(opts, resource.path, Enum.map(dav_props, &elem(&1, 1)))
 
     found = []
     not_found = []
 
     {found, not_found} =
-      Enum.reduce(dav_props, {found, not_found}, fn {_, name}, {f, nf} ->
+      Enum.reduce(resolvable, {found, not_found}, fn name, {f, nf} ->
         case get_standard_property(resource, name, locks) do
           nil -> {f, [{"D:#{name}", Saxy.XML.empty_element("D:#{name}", [])} | nf]}
           val -> {[{"D:#{name}", val} | f], nf}
@@ -184,12 +185,47 @@ defmodule Davy.Handler.Propfind do
       []
       |> maybe_add_propstat(200, Enum.reverse(found))
       |> maybe_add_propstat(404, Enum.reverse(not_found))
+      |> add_lock_failure_propstat(lock_failure)
 
     XML.response_element(href, propstats)
   end
 
   defp maybe_add_propstat(propstats, _status, []), do: propstats
   defp maybe_add_propstat(propstats, status, props), do: propstats ++ [{status, props}]
+
+  # `lockdiscovery` is the only property whose value comes from the lock store.
+  # When the store cannot answer, it is reported with the store's own status
+  # instead of being rendered as an empty element, which a client would read as
+  # "not locked". Properties that do not need the store are unaffected, so a
+  # directory listing still succeeds while the store is down.
+  defp resolve_lock_properties(opts, path, names) do
+    case Enum.split_with(names, &lock_dependent?/1) do
+      {[], _} ->
+        {names, [], nil}
+
+      {lock_names, other_names} ->
+        case get_locks(opts, path) do
+          {:ok, locks} -> {names, locks, nil}
+          {:error, error} -> {other_names, [], {error, lock_names}}
+        end
+    end
+  end
+
+  defp get_locks(opts, path) do
+    Telemetry.span_lock_store(opts.lock_store, :get_locks, %{path: path}, fn ->
+      opts.lock_store.get_locks(path)
+    end)
+  end
+
+  defp add_lock_failure_propstat(propstats, nil), do: propstats
+
+  defp add_lock_failure_propstat(propstats, {error, names}) do
+    props = Enum.map(names, fn name -> {"D:#{name}", Saxy.XML.empty_element("D:#{name}", [])} end)
+    maybe_add_propstat(propstats, Error.status_code(error.code), props)
+  end
+
+  defp lock_dependent?("lockdiscovery"), do: true
+  defp lock_dependent?(_), do: false
 
   defp get_standard_property(resource, "resourcetype", _locks),
     do: XML.resourcetype_element(resource.type)

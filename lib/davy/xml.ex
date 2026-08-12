@@ -8,6 +8,8 @@ defmodule Davy.XML do
 
   import Saxy.XML
 
+  alias Plug.Conn.Status
+
   @dav_ns "DAV:"
 
   # --- Parsing ---
@@ -243,16 +245,5 @@ defmodule Davy.XML do
     element("D:activelock", [], children)
   end
 
-  defp status_text(200), do: "OK"
-  defp status_text(201), do: "Created"
-  defp status_text(204), do: "No Content"
-  defp status_text(207), do: "Multi-Status"
-  defp status_text(403), do: "Forbidden"
-  defp status_text(404), do: "Not Found"
-  defp status_text(409), do: "Conflict"
-  defp status_text(412), do: "Precondition Failed"
-  defp status_text(423), do: "Locked"
-  defp status_text(424), do: "Failed Dependency"
-  defp status_text(507), do: "Insufficient Storage"
-  defp status_text(_), do: "Unknown"
+  defp status_text(status), do: Status.reason_phrase(status)
 end
