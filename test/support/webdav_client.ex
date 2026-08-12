@@ -18,9 +18,10 @@ defmodule Davy.Test.WebdavClient do
     request!(port, method: :get, url: path, headers: headers)
   end
 
-  @spec head(pos_integer(), String.t()) :: Req.Response.t()
-  def head(port, path) do
-    request!(port, method: :head, url: path)
+  @spec head(pos_integer(), String.t(), keyword()) :: Req.Response.t()
+  def head(port, path, opts \\ []) do
+    headers = Keyword.get(opts, :headers, [])
+    request!(port, method: :head, url: path, headers: headers)
   end
 
   @spec put(pos_integer(), String.t(), iodata(), keyword()) :: Req.Response.t()

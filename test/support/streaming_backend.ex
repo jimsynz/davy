@@ -1,10 +1,13 @@
 defmodule Davy.Test.StreamingBackend do
   @moduledoc """
-  Test backend that implements `put_content_stream/4` so we can assert
-  on the stream the handler hands the backend.
+  Test backend that streams in both directions.
 
-  Stores the received segments in an Agent so tests can inspect them
-  individually instead of just the assembled binary.
+  It implements `put_content_stream/4` so we can assert on the stream the
+  handler hands the backend, storing the received segments in an Agent so tests
+  can inspect them individually instead of just the assembled binary.
+
+  `get_content/3` returns a `Stream` rather than a binary, which is what drives
+  the handler's chunked response path.
   """
   @behaviour Davy.Backend
 
@@ -12,6 +15,7 @@ defmodule Davy.Test.StreamingBackend do
 
   @table __MODULE__
   @segments __MODULE__.Segments
+  @chunk_size 4
 
   def start do
     if :ets.whereis(@table) != :undefined, do: :ets.delete(@table)
@@ -54,12 +58,25 @@ defmodule Davy.Test.StreamingBackend do
   def set_properties(_auth, _resource, _operations), do: :ok
 
   @impl true
-  def get_content(_auth, resource, _opts) do
+  def get_content(_auth, resource, opts) do
     case :ets.lookup(@table, resource.path) do
-      [{_, _, content}] when content != nil -> {:ok, content}
+      [{_, _, content}] when content != nil -> {:ok, chunked_stream(content, opts)}
       _ -> {:error, %Error{code: :not_found}}
     end
   end
+
+  defp chunked_stream(content, opts) do
+    content
+    |> slice(opts)
+    |> Stream.unfold(fn
+      <<>> -> nil
+      <<chunk::binary-size(@chunk_size), rest::binary>> -> {chunk, rest}
+      rest -> {rest, <<>>}
+    end)
+  end
+
+  defp slice(content, %{range: {first, last}}), do: binary_part(content, first, last - first + 1)
+  defp slice(content, _opts), do: content
 
   @impl true
   def put_content(_auth, _path, _body, _opts) do

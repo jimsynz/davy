@@ -77,7 +77,15 @@ defmodule Davy.Backend do
   # --- File operations ---
 
   @doc """
-  Read file content. `opts` may include `:range` as `{start, end}`.
+  Read file content.
+
+  When `opts` contains `:range` as `{first, last}`, return exactly those bytes.
+  Both positions are absolute and inclusive, and have already been resolved
+  against the resource's `content_length`, so `first <= last < content_length`
+  always holds — a backend never has to clamp a range or decide whether one is
+  satisfiable. Resources reporting no `content_length` are never asked for a
+  partial read, because there is nothing to resolve suffix and open-ended
+  ranges against.
 
   Return `{:ok, iodata}` or `{:ok, enumerable}` for streaming.
   """

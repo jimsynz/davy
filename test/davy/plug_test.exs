@@ -16,6 +16,12 @@ defmodule Davy.PlugTest do
   defp conn(method, path), do: Plug.Test.conn(method, path)
   defp conn(method, path, body), do: Plug.Test.conn(method, path, body)
 
+  defp get_range(path, spec, opts) do
+    conn(:get, path)
+    |> put_req_header("range", spec)
+    |> call(opts)
+  end
+
   # --- OPTIONS ---
 
   describe "OPTIONS" do
@@ -157,6 +163,156 @@ defmodule Davy.PlugTest do
       resp = conn(:get, "/") |> call(opts)
 
       assert resp.status == 405
+    end
+  end
+
+  describe "GET with Range" do
+    setup %{opts: opts} do
+      conn(:put, "/range.txt", "0123456789ABCDEF") |> call(opts)
+      :ok
+    end
+
+    test "serves a closed range", %{opts: opts} do
+      resp = get_range("/range.txt", "bytes=5-9", opts)
+
+      assert resp.status == 206
+      assert resp.resp_body == "56789"
+      assert get_header(resp, "content-range") == "bytes 5-9/16"
+      assert get_header(resp, "content-length") == "5"
+      assert get_header(resp, "accept-ranges") == "bytes"
+    end
+
+    test "serves an open-ended range", %{opts: opts} do
+      resp = get_range("/range.txt", "bytes=10-", opts)
+
+      assert resp.status == 206
+      assert resp.resp_body == "ABCDEF"
+      assert get_header(resp, "content-range") == "bytes 10-15/16"
+    end
+
+    test "serves a suffix range", %{opts: opts} do
+      resp = get_range("/range.txt", "bytes=-4", opts)
+
+      assert resp.status == 206
+      assert resp.resp_body == "CDEF"
+      assert get_header(resp, "content-range") == "bytes 12-15/16"
+    end
+
+    test "serves the whole representation when the suffix is longer than it", %{opts: opts} do
+      resp = get_range("/range.txt", "bytes=-99", opts)
+
+      assert resp.status == 206
+      assert resp.resp_body == "0123456789ABCDEF"
+      assert get_header(resp, "content-range") == "bytes 0-15/16"
+    end
+
+    test "clamps a range that runs past the end", %{opts: opts} do
+      resp = get_range("/range.txt", "bytes=12-99", opts)
+
+      assert resp.status == 206
+      assert resp.resp_body == "CDEF"
+      assert get_header(resp, "content-range") == "bytes 12-15/16"
+    end
+
+    test "returns 416 when the first position is past the end", %{opts: opts} do
+      resp = get_range("/range.txt", "bytes=100-200", opts)
+
+      assert resp.status == 416
+      assert get_header(resp, "content-range") == "bytes */16"
+    end
+
+    test "returns 416 for an open-ended range past the end", %{opts: opts} do
+      resp = get_range("/range.txt", "bytes=100-", opts)
+
+      assert resp.status == 416
+      assert get_header(resp, "content-range") == "bytes */16"
+    end
+
+    test "returns 416 for a zero-length suffix", %{opts: opts} do
+      resp = get_range("/range.txt", "bytes=-0", opts)
+
+      assert resp.status == 416
+    end
+
+    test "returns 416 for any range on an empty file", %{opts: opts} do
+      conn(:put, "/empty.txt", "") |> call(opts)
+
+      assert get_range("/empty.txt", "bytes=0-", opts).status == 416
+      assert get_range("/empty.txt", "bytes=-1", opts).status == 416
+    end
+
+    test "ignores a range whose last position precedes its first", %{opts: opts} do
+      resp = get_range("/range.txt", "bytes=9-5", opts)
+
+      assert resp.status == 200
+      assert resp.resp_body == "0123456789ABCDEF"
+    end
+
+    test "ignores multi-range requests", %{opts: opts} do
+      resp = get_range("/range.txt", "bytes=0-1,5-6", opts)
+
+      assert resp.status == 200
+      assert resp.resp_body == "0123456789ABCDEF"
+    end
+
+    test "ignores unparseable and unsupported ranges", %{opts: opts} do
+      for spec <- ["bytes=", "bytes=-", "bytes=abc-def", "bytes=5", "items=0-1"] do
+        assert get_range("/range.txt", spec, opts).status == 200
+      end
+    end
+
+    test "HEAD reports the range without a body", %{opts: opts} do
+      resp =
+        conn(:head, "/range.txt")
+        |> put_req_header("range", "bytes=5-9")
+        |> call(opts)
+
+      assert resp.status == 206
+      assert resp.resp_body == ""
+      assert get_header(resp, "content-range") == "bytes 5-9/16"
+      assert get_header(resp, "content-length") == "5"
+    end
+
+    test "HEAD reports 416 for an unsatisfiable range", %{opts: opts} do
+      resp =
+        conn(:head, "/range.txt")
+        |> put_req_header("range", "bytes=100-")
+        |> call(opts)
+
+      assert resp.status == 416
+      assert resp.resp_body == ""
+    end
+  end
+
+  describe "GET (streaming backend)" do
+    setup do
+      StreamingBackend.start()
+      opts = Davy.Plug.init(backend: StreamingBackend)
+      conn(:put, "/streamed.txt", "0123456789ABCDEF") |> call(opts)
+      {:ok, opts: opts}
+    end
+
+    test "streams the whole file", %{opts: opts} do
+      resp = conn(:get, "/streamed.txt") |> call(opts)
+
+      assert resp.status == 200
+      assert resp.resp_body == "0123456789ABCDEF"
+    end
+
+    test "streams a resolved range with a matching content-length", %{opts: opts} do
+      resp = get_range("/streamed.txt", "bytes=-6", opts)
+
+      assert resp.status == 206
+      assert resp.resp_body == "ABCDEF"
+      assert get_header(resp, "content-range") == "bytes 10-15/16"
+      assert get_header(resp, "content-length") == "6"
+    end
+
+    test "returns 416 without consulting the backend", %{opts: opts} do
+      resp = get_range("/streamed.txt", "bytes=16-", opts)
+
+      assert resp.status == 416
+      assert get_header(resp, "content-range") == "bytes */16"
     end
   end
 

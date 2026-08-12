@@ -26,6 +26,7 @@ defmodule Davy.Error do
           | :method_not_allowed
           | :not_found
           | :precondition_failed
+          | :range_not_satisfiable
           | :request_entity_too_large
           | :service_unavailable
           | :unauthorized
@@ -47,6 +48,7 @@ defmodule Davy.Error do
   def status_code(:precondition_failed), do: 412
   def status_code(:request_entity_too_large), do: 413
   def status_code(:unsupported_media_type), do: 415
+  def status_code(:range_not_satisfiable), do: 416
   def status_code(:locked), do: 423
   def status_code(:failed_dependency), do: 424
   def status_code(:internal_error), do: 500

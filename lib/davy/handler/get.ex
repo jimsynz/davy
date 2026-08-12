@@ -2,7 +2,7 @@ defmodule Davy.Handler.Get do
   @moduledoc false
 
   import Plug.Conn
-  alias Davy.{Handler.Helpers, Telemetry}
+  alias Davy.{Error, Handler.Helpers, Telemetry}
 
   @doc false
   @spec handle(Plug.Conn.t(), map()) :: Plug.Conn.t()
@@ -24,8 +24,20 @@ defmodule Davy.Handler.Get do
   end
 
   defp serve_content(conn, opts, resource) do
-    range_opts = parse_range(conn)
+    case resolve_range(conn, resource) do
+      :unsatisfiable -> send_range_not_satisfiable(conn, resource)
+      range_opts -> read_and_send(conn, opts, resource, range_opts)
+    end
+  end
 
+  defp send_range_not_satisfiable(conn, resource) do
+    conn
+    |> put_resp_header("accept-ranges", "bytes")
+    |> put_resp_header("content-range", "bytes */#{resource.content_length}")
+    |> Helpers.send_error(%Error{code: :range_not_satisfiable, message: "Range Not Satisfiable"})
+  end
+
+  defp read_and_send(conn, opts, resource, range_opts) do
     result =
       Telemetry.span_backend(opts.backend, :get_content, %{path: resource.path}, fn ->
         opts.backend.get_content(opts.auth, resource, range_opts)
@@ -54,22 +66,7 @@ defmodule Davy.Handler.Get do
 
   defp send_binary_content(conn, resource, content, range_opts) do
     body = if is_list(content), do: IO.iodata_to_binary(content), else: content
-
-    {status, conn} =
-      case range_opts do
-        %{range: {start_byte, _}} ->
-          actual_end = start_byte + byte_size(body) - 1
-          total = if is_integer(resource.content_length), do: resource.content_length, else: "*"
-          range_header = "bytes #{start_byte}-#{actual_end}/#{total}"
-
-          {206,
-           conn
-           |> put_resp_header("content-range", range_header)
-           |> put_resp_header("content-length", Integer.to_string(byte_size(body)))}
-
-        _ ->
-          {200, put_content_length(conn, resource)}
-      end
+    {status, conn} = put_body_headers(conn, resource, range_opts)
 
     if conn.method == "HEAD" do
       send_resp(conn, status, "")
@@ -79,22 +76,7 @@ defmodule Davy.Handler.Get do
   end
 
   defp send_streamed_content(conn, resource, stream, range_opts) do
-    {status, conn} =
-      case range_opts do
-        %{range: {start_byte, end_byte}} ->
-          content_length = compute_range_length(start_byte, end_byte, resource.content_length)
-          actual_end = start_byte + content_length - 1
-          total = if is_integer(resource.content_length), do: resource.content_length, else: "*"
-          range_header = "bytes #{start_byte}-#{actual_end}/#{total}"
-
-          {206,
-           conn
-           |> put_resp_header("content-range", range_header)
-           |> put_resp_header("content-length", Integer.to_string(content_length))}
-
-        _ ->
-          {200, put_content_length(conn, resource)}
-      end
+    {status, conn} = put_body_headers(conn, resource, range_opts)
 
     if conn.method == "HEAD" do
       send_resp(conn, status, "")
@@ -102,6 +84,16 @@ defmodule Davy.Handler.Get do
       stream_chunks(conn, status, stream)
     end
   end
+
+  defp put_body_headers(conn, resource, %{range: {first, last}}) do
+    {206,
+     conn
+     |> put_resp_header("content-range", "bytes #{first}-#{last}/#{resource.content_length}")
+     |> put_resp_header("content-length", Integer.to_string(last - first + 1))}
+  end
+
+  defp put_body_headers(conn, resource, _range_opts),
+    do: {200, put_content_length(conn, resource)}
 
   defp stream_chunks(conn, status, stream) do
     conn = send_chunked(conn, status)
@@ -117,11 +109,6 @@ defmodule Davy.Handler.Get do
   defp streamable?(content) when is_binary(content), do: false
   defp streamable?(content) when is_list(content), do: false
   defp streamable?(_content), do: true
-
-  defp compute_range_length(start_byte, nil, total) when is_integer(total),
-    do: total - start_byte
-
-  defp compute_range_length(start_byte, end_byte, _total), do: end_byte - start_byte + 1
 
   defp put_content_type(conn, %{content_type: ct}) when is_binary(ct),
     do: put_resp_header(conn, "content-type", ct)
@@ -144,34 +131,55 @@ defmodule Davy.Handler.Get do
 
   defp put_content_length(conn, _), do: conn
 
-  defp parse_range(conn) do
-    case get_req_header(conn, "range") do
-      ["bytes=" <> range_spec] -> parse_range_spec(range_spec)
+  defp resolve_range(conn, resource) do
+    with ["bytes=" <> spec] <- get_req_header(conn, "range"),
+         {:ok, requested} <- parse_byte_range(spec),
+         {:ok, first, last} <- resolve_byte_range(requested, resource.content_length) do
+      %{range: {first, last}}
+    else
+      :unsatisfiable -> :unsatisfiable
       _ -> %{}
     end
   end
 
-  defp parse_range_spec(range_spec) do
-    case String.split(range_spec, "-", parts: 2) do
-      [start_str, end_str] ->
-        case parse_int(start_str) do
-          nil -> %{}
-          start_byte -> %{range: {start_byte, parse_int(end_str)}}
-        end
-
-      _ ->
-        %{}
+  defp parse_byte_range(spec) do
+    case String.split(spec, "-", parts: 2) do
+      [first, ""] -> with {:ok, first} <- parse_position(first), do: {:ok, {:from, first}}
+      ["", suffix] -> with {:ok, length} <- parse_position(suffix), do: {:ok, {:suffix, length}}
+      [first, last] -> parse_closed_range(first, last)
+      _ -> :error
     end
   end
 
-  defp parse_int(""), do: nil
+  defp parse_closed_range(first, last) do
+    with {:ok, first} <- parse_position(first),
+         {:ok, last} <- parse_position(last),
+         true <- last >= first do
+      {:ok, {:closed, first, last}}
+    else
+      _ -> :error
+    end
+  end
 
-  defp parse_int(str) do
+  defp parse_position(str) do
     case Integer.parse(str) do
-      {n, ""} -> n
-      _ -> nil
+      {position, ""} when position >= 0 -> {:ok, position}
+      _ -> :error
     end
   end
+
+  defp resolve_byte_range(_requested, nil), do: :error
+
+  defp resolve_byte_range({:closed, first, last}, total) when first < total,
+    do: {:ok, first, min(last, total - 1)}
+
+  defp resolve_byte_range({:from, first}, total) when first < total,
+    do: {:ok, first, total - 1}
+
+  defp resolve_byte_range({:suffix, length}, total) when length > 0 and total > 0,
+    do: {:ok, max(total - length, 0), total - 1}
+
+  defp resolve_byte_range(_requested, _total), do: :unsatisfiable
 
   defp format_http_date(datetime) do
     Calendar.strftime(datetime, "%a, %d %b %Y %H:%M:%S GMT")

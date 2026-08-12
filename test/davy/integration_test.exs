@@ -76,6 +76,36 @@ defmodule Davy.IntegrationTest do
       assert header(resp, "accept-ranges") == "bytes"
     end
 
+    test "GET with a suffix Range header returns the last bytes", %{port: port} do
+      WebdavClient.put(port, "/suffix.txt", "0123456789ABCDEF")
+
+      resp = WebdavClient.get(port, "/suffix.txt", headers: [{"range", "bytes=-4"}])
+
+      assert resp.status == 206
+      assert resp.body == "CDEF"
+      assert header(resp, "content-range") == "bytes 12-15/16"
+    end
+
+    test "GET with an unsatisfiable Range header returns 416", %{port: port} do
+      WebdavClient.put(port, "/unsatisfiable.txt", "0123456789ABCDEF")
+
+      resp = WebdavClient.get(port, "/unsatisfiable.txt", headers: [{"range", "bytes=100-200"}])
+
+      assert resp.status == 416
+      assert header(resp, "content-range") == "bytes */16"
+    end
+
+    test "HEAD with a Range header reports the range without a body", %{port: port} do
+      WebdavClient.put(port, "/head-range.txt", "0123456789ABCDEF")
+
+      resp = WebdavClient.head(port, "/head-range.txt", headers: [{"range", "bytes=5-9"}])
+
+      assert resp.status == 206
+      assert resp.body == ""
+      assert header(resp, "content-range") == "bytes 5-9/16"
+      assert header(resp, "content-length") == "5"
+    end
+
     test "GET without Range header returns full content", %{port: port} do
       WebdavClient.put(port, "/full.txt", "complete")
 
