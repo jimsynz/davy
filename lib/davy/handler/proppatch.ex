@@ -17,7 +17,7 @@ defmodule Davy.Handler.Proppatch do
              opts.backend.resolve(opts.auth, path)
            end),
          # audit:bounded PROPPATCH body is a small XML property list (RFC 4918 §9.2)
-         {:ok, body, _conn} <- read_body(conn),
+         {:ok, body, conn} <- read_body(conn),
          {:ok, operations} <- parse_proppatch_body(body) do
       properties = Enum.map(operations, &operation_property/1)
 
