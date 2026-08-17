@@ -36,7 +36,7 @@ defmodule Davy.Handler.Propfind do
 
       case resolved do
         {:ok, resource} ->
-          request_type = parse_propfind_body(conn)
+          {request_type, conn} = parse_propfind_body(conn)
           resources = collect_resources(resource, depth, opts)
           send_propfind_response(conn, opts, resources, request_type)
 
@@ -49,11 +49,11 @@ defmodule Davy.Handler.Propfind do
   defp parse_propfind_body(conn) do
     # audit:bounded PROPFIND body is a small XML property list (RFC 4918 §9.1)
     case read_body(conn) do
-      {:ok, "", _conn} ->
-        :allprop
+      {:ok, "", conn} ->
+        {:allprop, conn}
 
-      {:ok, body, _conn} ->
-        parse_propfind_xml(body)
+      {:ok, body, conn} ->
+        {parse_propfind_xml(body), conn}
     end
   end
 
