@@ -15,30 +15,36 @@ defmodule Davy.Handler.Proppatch do
          {:ok, resource} <-
            Telemetry.span_backend(opts.backend, :resolve, %{path: path}, fn ->
              opts.backend.resolve(opts.auth, path)
-           end),
-         # audit:bounded PROPPATCH body is a small XML property list (RFC 4918 §9.2)
-         {:ok, body, _conn} <- read_body(conn),
-         {:ok, operations} <- parse_proppatch_body(body) do
-      properties = Enum.map(operations, &operation_property/1)
+           end) do
+      # audit:bounded PROPPATCH body is a small XML property list (RFC 4918 §9.2)
+      # Read outside the `with`: a `conn` rebound in a clause is not in scope in
+      # `else`, so a body-parse failure would respond on the pre-read conn.
+      {:ok, body, conn} = read_body(conn)
 
-      result =
-        Telemetry.span_backend(
-          opts.backend,
-          :set_properties,
-          %{path: resource.path, properties: properties},
-          fn -> opts.backend.set_properties(opts.auth, resource, operations) end
-        )
-
-      case result do
-        :ok ->
-          send_proppatch_success(conn, path, operations)
-
-        {:error, error} ->
-          Helpers.send_error(conn, error)
+      case parse_proppatch_body(body) do
+        {:ok, operations} -> apply_operations(conn, opts, resource, path, operations)
+        {:error, :bad_request} -> send_resp(conn, 400, "Invalid PROPPATCH body")
       end
     else
-      {:error, :bad_request} ->
-        send_resp(conn, 400, "Invalid PROPPATCH body")
+      {:error, error} ->
+        Helpers.send_error(conn, error)
+    end
+  end
+
+  defp apply_operations(conn, opts, resource, path, operations) do
+    properties = Enum.map(operations, &operation_property/1)
+
+    result =
+      Telemetry.span_backend(
+        opts.backend,
+        :set_properties,
+        %{path: resource.path, properties: properties},
+        fn -> opts.backend.set_properties(opts.auth, resource, operations) end
+      )
+
+    case result do
+      :ok ->
+        send_proppatch_success(conn, path, operations)
 
       {:error, error} ->
         Helpers.send_error(conn, error)

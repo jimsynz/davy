@@ -25,10 +25,10 @@ defmodule Davy.Handler.Lock do
   defp create_lock(conn, opts, path, depth, timeout) do
     # audit:bounded WebDAV LOCK body is a small lockinfo XML (RFC 4918 §9.10)
     case read_body(conn) do
-      {:ok, "", _conn} ->
+      {:ok, "", conn} ->
         send_resp(conn, 400, "Lock request requires a body")
 
-      {:ok, body, _conn} ->
+      {:ok, body, conn} ->
         case parse_lock_body(body) do
           {:ok, scope, owner} -> acquire_lock(conn, opts, path, scope, depth, owner, timeout)
           {:error, :bad_request} -> send_resp(conn, 400, "Invalid LOCK body")
