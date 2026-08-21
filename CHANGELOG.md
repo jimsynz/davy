@@ -5,6 +5,15 @@ See [Conventional Commits](Https://conventionalcommits.org) for commit guideline
 
 <!-- changelog -->
 
+## v0.4.1 (2026-08-21)
+
+
+
+
+### Bug Fixes:
+
+* respond on the `conn` returned by `read_body/2` (#1) by Benjamin Milde
+
 ## v0.4.0 (2026-08-12)
 ### Breaking Changes:
 
